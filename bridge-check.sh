@@ -5,7 +5,7 @@
 set -uo pipefail
 
 PORT="${SHIM_PORT:-9922}"
-BRIDGE_IP="${SHIM_BIND:-172.19.0.1}"
+BRIDGE_IP="${SHIM_BIND:-172.31.90.1}"
 NET="n8n-workflows_n8n-net"
 ok=0
 
@@ -31,10 +31,11 @@ if ip -4 addr 2>/dev/null | grep -q "$BRIDGE_IP/"; then
     echo "   ✅ attached to a docker bridge"
   fi
 else
-  echo "   ⚠  $BRIDGE_IP gone — the n8n network was recreated."
+  echo "   ⚠  $BRIDGE_IP gone — the n8n network was recreated (or the compose subnet unpinned)."
   echo "      New gateway: $(docker network inspect "$NET" \
         --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null)"
-  echo "      Then update SHIM_BIND in sandbox-shim.service and re-add the ufw rule:"
+  echo "      docker-compose.yml pins 172.31.90.0/24, so this should NOT happen."
+  echo "      If it does, update SHIM_BIND in sandbox-shim.service and the ufw rule:"
   echo "        sudo ufw allow in on <new-br> to <new-gateway> port $PORT proto tcp"
   ok=1
 fi

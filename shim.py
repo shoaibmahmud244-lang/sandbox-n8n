@@ -13,7 +13,7 @@ a fixed argv invoking syschange-run; the only caller-controlled value is the
 change request text and the run id.
 
 Security properties:
-  * Binds to the docker bridge gateway only (172.19.0.1), never 0.0.0.0, so it
+  * Binds to the docker bridge gateway only (172.31.90.1), never 0.0.0.0, so it
     is not reachable from the LAN and not from outside the host.
   * Requires a shared token on every endpoint except /health.
   * syschange's own approval gate is still authoritative: plan() cannot apply

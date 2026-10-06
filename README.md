@@ -39,7 +39,7 @@ anything, and `approve` requires an explicit run id.
 |---|---|
 | token | `~/.config/sandbox-shim/token` (0600, **not** in this repo) |
 | audit log | `~/.local/state/sandbox-shim/audit.log` |
-| bind | `172.19.0.1:9922` (the `n8n-workflows_n8n-net` gateway) |
+| bind | `172.31.90.1:9922` (the `n8n-workflows_n8n-net` gateway) |
 | n8n webhook | `POST http://localhost:5678/webhook/syschange` |
 
 The token is stored as an n8n credential (`Sandbox Shim Token`,
@@ -64,7 +64,7 @@ systemctl --user enable --now sandbox-shim.service
 
 ```bash
 ./bridge-check.sh
-curl -s http://172.19.0.1:9922/health
+curl -s http://172.31.90.1:9922/health
 ```
 
 ## Gotchas that cost real time

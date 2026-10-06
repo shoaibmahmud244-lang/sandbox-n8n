@@ -10,8 +10,12 @@ ExecStart=/usr/bin/python3 /home/solonext/sandbox-shim/shim.py
 # Explicit, not "auto": the auto path shells out to `docker network inspect`,
 # which fails inside this unit (no docker socket access — permission denied on
 # /var/run/docker.sock), and it silently degrades to 127.0.0.1 where n8n can
-# never reach it. Verify with `bridge-check.sh` if the n8n network is recreated.
-Environment=SHIM_BIND=172.19.0.1
+# never reach it.
+#
+# This address is stable because docker-compose.yml pins n8n-net to
+# 172.31.90.0/24, so the gateway is always 172.31.90.1. If you ever unpinned that
+# subnet, this value AND the host firewall rule would both need updating.
+Environment=SHIM_BIND=172.31.90.1
 Environment=SHIM_PORT=9922
 # systemd's default PATH is only /usr/local/bin:/usr/bin:/bin, which omits the
 # mise-managed tool dirs. syschange resolves its planner with

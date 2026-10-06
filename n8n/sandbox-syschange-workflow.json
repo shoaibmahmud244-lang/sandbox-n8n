@@ -128,7 +128,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://172.19.0.1:9922/approve",
+        "url": "http://172.31.90.1:9922/approve",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -168,7 +168,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://172.19.0.1:9922/plan",
+        "url": "http://172.31.90.1:9922/plan",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
