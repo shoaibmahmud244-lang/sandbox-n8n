@@ -1,0 +1,428 @@
+{
+  "id": "b2c3d4e5-0000-4000-8000-00000000cafe",
+  "name": "Sandbox — syschange plan & approve",
+  "nodes": [
+    {
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "f0000000-0000-4000-8000-000000000001",
+      "name": "How this works",
+      "position": [
+        -600,
+        -420
+      ],
+      "parameters": {
+        "content": "## Sandbox — syschange\n\n**Plan, review, approve.** Nothing changes\nuntil a plan comes back asking for approval.\n\n```\nplan  ->  202 + run_id  ->  you read it  ->  approve\n```\n\n| status | meaning |\n|---|---|\n| `202` | planned, waiting for you |\n| `200` | ran, no approval needed |\n| `400` | your request was malformed |\n| `502` | shim unreachable (check it) |\n\nHeader required on every call:\n`X-Sandbox-Key: <caller key>`\n",
+        "height": 420,
+        "width": 380,
+        "color": 4
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "syschange",
+        "responseMode": "responseNode",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Sandbox Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "webhookId": "sandbox-syschange",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a1000000-0000-4000-8000-0000000cc002",
+          "name": "Sandbox Caller Key"
+        }
+      },
+      "notes": "Auth is enforced here, not at the shim. Without a browser or script holding X-Sandbox-Key, a page on your machine cannot drive syschange."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise the caller's input and validate it BEFORE anything reaches syschange.\n// Everything downstream can then trust these fields.\nconst body = $json.body ?? {};\nconst action = String(body.action ?? 'plan').trim().toLowerCase();\nconst out = { action, valid: true, error: null };\n\nif (!['plan', 'approve'].includes(action)) {\n  out.valid = false;\n  out.error = {\n    code: 'UNKNOWN_ACTION',\n    message: `Unsupported action \"${action}\".`,\n    hint: 'Use action \"plan\" to describe a change, or action \"approve\" with a run_id.',\n  };\n} else if (action === 'plan') {\n  const request = String(body.request ?? '').trim();\n  if (!request) {\n    out.valid = false;\n    out.error = { code: 'MISSING_REQUEST',\n      message: 'A plan needs a \"request\" describing what you want changed.',\n      hint: 'e.g. {\"action\":\"plan\",\"request\":\"show disk usage\"}' };\n  } else if (request.length > 2000) {\n    out.valid = false;\n    out.error = { code: 'REQUEST_TOO_LONG',\n      message: `request is ${request.length} characters; the limit is 2000.`,\n      hint: 'Describe the change more briefly.' };\n  }\n  out.request = request;\n} else {\n  const runId = String(body.run_id ?? '').trim();\n  if (!/^run-[A-Za-z0-9-]+$/.test(runId)) {\n    out.valid = false;\n    out.error = { code: 'BAD_RUN_ID',\n      message: 'An approval needs a run_id shaped like \"run-xxxxxxxx\".',\n      hint: 'Copy the run id from the plan response you are approving.' };\n  }\n  out.run_id = runId;\n}\nreturn [{ json: out }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        0
+      ],
+      "notes": "Fails fast and specifically, so a bad call never reaches syschange.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Request Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "approve-check",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Approve?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        40,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.19.0.1:9922/approve",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run_id: $json.run_id }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Approve (host shim)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        -240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a1000000-0000-4000-8000-0000000cc001",
+          "name": "Sandbox Shim Token"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false,
+      "notes": "Applies a previously planned run. n8n has no shell - the shim runs syschange-run with a fixed argv."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.19.0.1:9922/plan",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $json.request }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Plan (host shim)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "a1000000-0000-4000-8000-0000000cc001",
+          "name": "Sandbox Shim Token"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false,
+      "notes": "Read-only. Runs syschange-run plan; syschange decides on its own whether approval is required."
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $json;\nconst ok = a.exit_code === 0 && Boolean(a.applied);\nreturn [{ json: {\n  code: ok ? 200 : 500,\n  body: {\n    ok,\n    kind: 'approval',\n    run: { id: a.run_id ?? null, applied: Boolean(a.applied), exit_code: a.exit_code ?? null },\n    message: ok\n      ? 'Approved and applied.'\n      : 'Approval did not complete. Nothing should be assumed to have changed.',\n    output: String(a.stdout ?? '').slice(-4000),\n    error: ok ? null : { code: 'APPROVE_FAILED', message: String(a.stderr ?? '').slice(0, 600) },\n    meta: { execution_id: $execution.id, at: new Date().toISOString() },\n  },\n} }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Shape Approval Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn the shim's plan into a response an operator can act on:\n// a human message, an explicit next step, and the risk in plain words.\nconst s = $json;\nconst steps = s.steps ?? [];\nconst risk = String(s.risk ?? 'unknown').toLowerCase();\nconst needsApproval = Boolean(s.approval_required);\nconst RISK_WORDS = {\n  low: 'Low risk - mostly reads, but syschange still decides what to run.',\n  medium: 'Medium risk - some steps change state. Read every command.',\n  high: 'High risk - expects sudo or irreversible changes. Read every command.',\n  critical: 'Critical risk - treat this as potentially destructive.',\n};\n\nreturn [{ json: {\n  code: needsApproval ? 202 : (s.exit_code === 0 ? 200 : 502),\n  body: {\n    ok: s.exit_code === 0 || needsApproval,\n    kind: 'plan',\n    run: {\n      id: s.run_id ?? null,\n      risk,\n      risk_note: RISK_WORDS[risk] ?? 'Unrecognised risk level - read every step.',\n      step_count: steps.length,\n      approval_required: needsApproval,\n      applied: Boolean(s.applied),\n    },\n    steps: steps.map(st => ({ id: st.id, risk: st.risk, command: st.command })),\n    // Pre-test evidence: what a scratch run of the step actually did.\n    pretest: s.pretest_report || null,\n    message: needsApproval\n      ? `Planned ${steps.length} step(s) at ${risk} risk. NOTHING HAS BEEN CHANGED YET.`\n      : `syschange ran ${steps.length} step(s) at ${risk} risk without hitting an approval gate.`,\n    next: needsApproval ? {\n      via_api: { action: 'approve', run_id: s.run_id },\n      via_cli: `~/ai-system/syschange/syschange-run approve ${s.run_id} --yes`,\n      warning: 'Approving executes these commands with your privileges.',\n    } : null,\n    error: s.error ? { code: 'PLANNER_FAILED', message: String(s.error).slice(0, 600) } : null,\n    meta: { execution_id: $execution.id, at: new Date().toISOString() },\n  },\n} }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Shape Plan Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        60
+      ],
+      "notes": "Turns syschange's parsed plan into an operator-readable answer with an explicit next step.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const v = $json;\nreturn [{ json: { code: 400, body: {\n  ok: false, kind: 'error',\n  error: v.error,\n  message: v.error?.message ?? 'Invalid request.',\n  meta: { execution_id: $execution.id, at: new Date().toISOString() },\n} } }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Shape Rejection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $json ?? {};\nconst detail = e.error?.message ?? e.message ?? 'The sandbox shim did not respond as expected.';\nreturn [{ json: { code: 502, body: {\n  ok: false, kind: 'error',\n  error: { code: 'SHIM_UNREACHABLE', message: String(detail).slice(0, 600) },\n  message: 'Could not reach the sandbox shim on the host.',\n  hint: 'Check: systemctl --user status sandbox-shim && ~/sandbox-shim/bridge-check.sh',\n  meta: { execution_id: $execution.id, at: new Date().toISOString() },\n} } }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Shape Shim Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ],
+      "notes": "A dead shim returns a clear 502 instead of an opaque n8n error.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.code }}"
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000011",
+      "name": "Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Sandbox Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Approve?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve?": {
+      "main": [
+        [
+          {
+            "node": "Approve (host shim)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan (host shim)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve (host shim)": {
+      "main": [
+        [
+          {
+            "node": "Shape Approval Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Shim Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan (host shim)": {
+      "main": [
+        [
+          {
+            "node": "Shape Plan Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Shim Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Approval Result": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Plan Result": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Rejection": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Shim Failure": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": true,
+  "pinData": {},
+  "tags": []
+}

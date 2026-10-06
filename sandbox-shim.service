@@ -1,0 +1,75 @@
+[Unit]
+Description=Sandbox shim — narrow syschange front for n8n
+Documentation=file:///home/solonext/sandbox-shim/shim.py
+After=network.target
+PartOf=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/solonext/sandbox-shim/shim.py
+# Explicit, not "auto": the auto path shells out to `docker network inspect`,
+# which fails inside this unit (no docker socket access — permission denied on
+# /var/run/docker.sock), and it silently degrades to 127.0.0.1 where n8n can
+# never reach it. Verify with `bridge-check.sh` if the n8n network is recreated.
+Environment=SHIM_BIND=172.19.0.1
+Environment=SHIM_PORT=9922
+# systemd's default PATH is only /usr/local/bin:/usr/bin:/bin, which omits the
+# mise-managed tool dirs. syschange resolves its planner with
+# shutil.which("opencode") (syschange/llm.py:46) and its memory backend with
+# which("engram") (syschange/memory.py:84); neither is on the default PATH, and
+# planner steps that shell out then fail with rc=126. Mirror the interactive
+# shell's PATH so the shim sees the same tools you do.
+Environment=PATH=/home/solonext/.local/share/mise/installs/opencode/latest:/home/solonext/.local/share/mise/shims:/home/solonext/.local/bin:/usr/share/omarchy/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl
+Restart=on-failure
+RestartSec=5
+
+# The shim only needs to read syschange and write its own token/audit files.
+# It must never be a root service: syschange-run refuses to run as root anyway,
+# and a root shim would be a root remote procedure call.
+User=solonext
+NoNewPrivileges=true
+# Restored after bisecting which directives actually break bubblewrap:
+#   RestrictNamespaces=true -> bwrap cannot create its user+mount namespaces
+#                             ("Can't open source /: Function not implemented"),
+#                             which fails EVERY step as rc=126.
+#   CapabilityBoundingSet=  -> same failure (bwrap needs CAP_SETUID/SETGID for
+#                             the uid/gid map).
+#   ProtectSystem=strict / ProtectHome=read-only / PrivateTmp=true are SAFE with
+#   bwrap and are restored here, so the shim keeps a real boundary.
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+# ReadWritePaths below is only meaningful together with ProtectSystem=full /
+# ProtectHome=read-only, which is why it is kept.
+# syschange persists its run ledger to state.db (+ -wal/-shm) inside its own
+# repo (syschange/cli.py:32), so that directory must stay writable or every
+# plan call fails. Everything else in $HOME stays read-only.
+ReadWritePaths=/home/solonext/.local/state/sandbox-shim
+ReadWritePaths=/home/solonext/ai-system/syschange
+# syschange's planner shells out to `opencode run`, which opens its log and
+# cache for writing. With ProtectHome=read-only and no exception here, that
+# child dies with "FileSystem.open (.../opencode/log/opencode.log)" and the
+# whole plan fails. Confirmed by contrast: the same call succeeds outside the
+# unit and fails inside it.
+ReadWritePaths=/home/solonext/.local/share/opencode
+ReadWritePaths=/home/solonext/.cache/opencode
+ReadWritePaths=/home/solonext/.config/opencode
+ReadWritePaths=/home/solonext/.local/state/opencode
+
+# MemoryDenyWriteExecute=true is deliberately NOT set. syschange's planner spawns
+# `opencode run`, which loads V8. V8 must mmap its JIT code pages PROT_EXEC during
+# heap setup, so with W^X enforced node aborts at startup:
+#   v8::base::OS::Abort <- V8_Fatal <- SetPermissions <- CodeRange::InitReservation
+# Confirmed in coredumpctl under Control Group sandbox-shim.service. The directive
+# buys little here: this unit's real boundary is the shim's own allowlist (only
+# /plan and /approve, fixed argv, no shell), not memory protection.
+# MemoryDenyWriteExecute, PrivateTmp, ProtectSystem, ProtectHome, ProtectKernel*,
+# RestrictNamespaces are deliberately NOT set:
+#  * V8/node needs PROT_EXEC JIT pages (see above).
+#  * bwrap --ro-bind/--unshare-all cannot create its user+mount namespaces under
+#    RestrictNamespaces=true or ProtectSystem=strict, which fails every step as
+#    rc=126 SandboxUnavailable.
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target
